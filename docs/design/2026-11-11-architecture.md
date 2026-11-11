@@ -170,6 +170,7 @@ erDiagram
     }
     OUTBOX {
         uuid id PK "event_id"
+        bigint seq "publish order"
         uuid aggregate_id "visit id"
         text event_type
         jsonb payload
