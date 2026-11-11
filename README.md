@@ -7,6 +7,10 @@ The modules talk only through a `VisitCompleted` event (transactional outbox, re
 
 Diagrams, data model and key decisions: [docs/design/2026-11-11-architecture.md](docs/design/2026-11-11-architecture.md).
 
+Proposals for what comes next, in [docs/proposals/](docs/proposals/):
+- [The other visit transitions](docs/proposals/2026-11-11-visit-transitions.md): start, cancel, missed, and undoing a completion.
+- [Observability and monitoring](docs/proposals/2026-11-11-observability.md): metrics, alerts, reconciliation, and one trace through the outbox.
+
 ## Run it
 
 Needs Docker with Compose.
@@ -119,11 +123,11 @@ Notes:
 - Outbox cleanup or partitioning.
 - LISTEN/NOTIFY or Debezium CDC instead of polling.
 - Per-module database roles.
-- Metrics and tracing.
+- Metrics and tracing ([proposal](docs/proposals/2026-11-11-observability.md)).
 - An `Idempotency-Key` header.
 - Head-of-line blocking: the relay publishes in `seq` order, so an event that could never be published would hold back
   the ones behind it. No such per-event failure is reachable today; every failure so far is Kafka being unavailable.
 - Ordering when several relays run (one relay keeps per-visit order).
 - The reversal flow. It must keep a redelivered `VisitCompleted` from billing the visit a second time;
-  today the partial unique index blocks that.
+  today the partial unique index blocks that ([proposal](docs/proposals/2026-11-11-visit-transitions.md#later-undoing-a-completion-touches-billing)).
 - `ensure_topic` uses aiokafka's default 40 s admin timeout.
