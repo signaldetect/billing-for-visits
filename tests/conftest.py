@@ -6,10 +6,12 @@ from pathlib import Path
 from uuid import UUID
 
 import asyncpg
+import httpx
 import pytest
 import pytest_asyncio
 from testcontainers.community.postgres import PostgresContainer
 
+from app.main import create_app
 from app.shared.db import create_pool
 
 # Docker Desktop's host socket path can't be mounted into Ryuk; /var/run/docker.sock is the
@@ -71,3 +73,10 @@ def make_visit(pool):
         )
 
     return _make
+
+
+@pytest_asyncio.fixture
+async def client(pool):
+    transport = httpx.ASGITransport(app=create_app(pool=pool))
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as c:
+        yield c
