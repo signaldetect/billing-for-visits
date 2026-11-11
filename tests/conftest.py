@@ -1,4 +1,5 @@
 import asyncio
+import os
 from datetime import UTC, datetime
 from decimal import Decimal
 from pathlib import Path
@@ -10,6 +11,10 @@ import pytest_asyncio
 from testcontainers.community.postgres import PostgresContainer
 
 from app.shared.db import create_pool
+
+# Docker Desktop's host socket path can't be mounted into Ryuk; /var/run/docker.sock is the
+# in-VM path on Docker Desktop, Colima and Linux.
+os.environ.setdefault("TESTCONTAINERS_DOCKER_SOCKET_OVERRIDE", "/var/run/docker.sock")
 
 ROOT = Path(__file__).resolve().parent.parent
 MIGRATION_DIRS = [ROOT / "db" / "visits" / "migrations", ROOT / "db" / "billing" / "migrations"]
