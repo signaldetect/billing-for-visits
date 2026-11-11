@@ -2,6 +2,7 @@ import asyncio
 from contextlib import asynccontextmanager
 from uuid import uuid4
 
+from app.billing import handler
 from app.billing.consumer import build_broker
 from app.contracts.events import VISITS_TOPIC
 from app.shared.kafka import ensure_topic
@@ -83,4 +84,27 @@ async def test_event_survives_kafka_outage(client, pool, make_visit, kafka_boots
     async with consumer:
         await consumer.start()
         [rec] = await wait_for_records(client, vid)
+    assert rec["amount"] == "60.00"
+
+
+async def test_failed_delivery_is_redelivered(client, pool, make_visit, kafka_bootstrap, monkeypatch):
+    # The first delivery of each event fails like a database outage; NACK_ON_ERROR must redeliver it.
+    real = handler.handle_visit_completed
+    seen = set()
+
+    async def flaky(pool, event):
+        if event.event_id not in seen:
+            seen.add(event.event_id)
+            raise ConnectionError("database down")
+        return await real(pool, event)
+
+    monkeypatch.setattr(handler, "handle_visit_completed", flaky)
+    await ensure_topic(kafka_bootstrap, VISITS_TOPIC)
+    consumer = build_broker(kafka_bootstrap, lambda: pool, group_id=f"billing-{uuid4()}")
+    async with consumer:
+        await consumer.start()
+        async with running_relay(pool, kafka_bootstrap):
+            vid = await make_visit("in_progress")
+            assert (await client.post(f"/api/visits/{vid}/complete")).status_code == 200
+            [rec] = await wait_for_records(client, vid, timeout=20.0)
     assert rec["amount"] == "60.00"
