@@ -41,6 +41,7 @@ Try it:
 V=00000000-0000-0000-0000-000000000001
 curl -s -XPOST localhost:8000/api/visits/$V/complete      # 200, status "completed"
 curl -s -XPOST localhost:8000/api/visits/$V/complete      # 409
+sleep 3                                                  # billing is asynchronous
 curl -s "localhost:8000/api/billing-records?visit_id=$V"  # one record, amount "60.00"
 ```
 
