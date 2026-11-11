@@ -1,6 +1,6 @@
 # billing-for-visits Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [x]`) syntax for tracking.
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** `POST /api/visits/{id}/complete` completes a visit, and through Kafka the visit gets exactly one billing
 record. This must hold even when Kafka is down, an event arrives twice, or two requests race.
@@ -32,10 +32,13 @@ The code and the README supersede this plan where they differ.
 - The concurrency test polls `pg_stat_activity` from a separate autocommit monitor connection, unlike the poll on the
   locker connection in the Task 4 step: the locker's transaction snapshots `pg_stat_activity` once.
 - `.python-version` pins Python 3.12, and `tests/conftest.py` defaults the testcontainers socket override.
-- `amount numeric(18,2)` instead of `numeric(12,2)`, so the column cannot overflow (F4).
-- `VisitIn` rejects `completed`; a visit becomes completed only through the complete endpoint (F5).
-- A redelivery e2e test, `test_failed_delivery_is_redelivered`, pins `AckPolicy.NACK_ON_ERROR` (F1).
-- Seed visit `…06`, `in_progress`, for the README's Kafka outage demo (F3).
+- `amount numeric(18,2)` instead of `numeric(12,2)`, so the column cannot overflow.
+- `VisitIn` rejects `completed`; a visit becomes completed only through the complete endpoint.
+- A redelivery e2e test, `test_failed_delivery_is_redelivered`, pins `AckPolicy.NACK_ON_ERROR`.
+- Seed visit `…06`, `in_progress`, for the README's Kafka outage demo.
+- The concurrent duplicate-delivery test gates `insert_record` until a monitor connection sees the second delivery
+  waiting on the first one's inbox row, so the two deliveries always overlap.
+- The `postgres` service publishes no host port; the README reaches it through `docker compose exec`.
 
 ## Global Constraints
 
