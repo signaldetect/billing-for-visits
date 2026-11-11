@@ -3,7 +3,7 @@ CREATE SCHEMA IF NOT EXISTS billing;
 CREATE TABLE billing.billing_records (
   id         uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   visit_id   uuid NOT NULL,                          -- no FK: another module's aggregate
-  amount     numeric(12,2) NOT NULL CHECK (amount >= 0),
+  amount     numeric(18,2) NOT NULL CHECK (amount >= 0),
   status     text NOT NULL DEFAULT 'created' CHECK (status IN ('created','reversed')),
   created_at timestamptz NOT NULL DEFAULT now()
 );

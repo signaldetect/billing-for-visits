@@ -1,4 +1,3 @@
-from datetime import timedelta
 from decimal import Decimal
 
 import asyncpg
@@ -71,12 +70,14 @@ async def test_non_json_body_with_json_content_type_is_skipped(pool):
     assert await count(pool) == 0
 
 
-async def test_amount_overflowing_column_is_skipped(pool, make_event):
-    e = make_event(
-        rate=Decimal("99999999.99"),
-        end_date_time=make_event().start_date_time + timedelta(hours=101),
-    )
-    await publish(pool, e.model_dump(mode="json"), HEADERS)
+async def test_database_data_error_is_skipped(pool, make_event, monkeypatch):
+    async def failing_insert(conn, **kwargs):
+        raise asyncpg.exceptions.NumericValueOutOfRangeError("numeric field overflow")
+
+    monkeypatch.setattr("app.billing.repository.insert_record", failing_insert)
+    e = make_event()
+    raw = e.model_dump_json().encode()
+    assert await process_visits_message(pool, raw, HEADERS) is False
     assert await count(pool) == 0
 
 
