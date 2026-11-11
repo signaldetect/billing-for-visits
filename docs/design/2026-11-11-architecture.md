@@ -152,6 +152,26 @@ sequenceDiagram
 Kafka may deliver an event more than once, but the inbox lets it take effect only once. A partial
 unique index on `billing_records` is the last line of defence.
 
+### A message can't be processed
+
+```mermaid
+sequenceDiagram
+    participant K as Kafka
+    participant BC as billing-consumer
+    participant DB as schema billing
+    K->>BC: message
+    alt poison: not JSON, breaks the contract, end ≤ start
+        Note over BC: log the error, skip
+        BC->>K: commit offset
+    else database unavailable
+        BC-xDB: INSERT fails
+        BC->>K: nack, so the message comes again
+    end
+```
+
+A message that can never succeed is logged and skipped, so it can't block the partition. Visits never produces one,
+because the same bounds apply on both sides. A dead-letter topic is the next step.
+
 ## Data model
 
 **Schema `visits`**
