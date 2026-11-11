@@ -1,6 +1,6 @@
 # billing-for-visits Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [x]`) syntax for tracking.
 
 **Goal:** `POST /api/visits/{id}/complete` completes a visit, and through Kafka the visit gets exactly one billing
 record. This must hold even when Kafka is down, an event arrives twice, or two requests race.
@@ -17,6 +17,25 @@ The two modules share only the event contract (`app.contracts`) and infrastructu
 PostgreSQL 16, Kafka 3.9 (KRaft), dbmate, docker-compose, pytest with pytest-asyncio and testcontainers, uv.
 
 **Spec:** `docs/design/2026-11-11-architecture.md`.
+
+## Deviations during implementation
+
+The code and the README supersede this plan where they differ.
+
+- `faststream[kafka,cli]` instead of `faststream[kafka]`: the `billing-consumer` container runs `faststream run`.
+- A pass-through subscriber decoder for the raw body, so a body that is not JSON reaches `process_visits_message` and is
+  skipped instead of failing in FastStream and being redelivered forever.
+- Contract bounds on `rate` (`max_digits=10, decimal_places=2`). Domain-invalid events (end <= start, or a rate outside
+  `numeric(10,2)`) and `asyncpg.DataError` are treated as poison and skipped.
+- `run_relay` catches any failed pass, including Postgres being unavailable, and backs off.
+- `ensure_topic` raises on topic creation errors, other than "already exists".
+- The concurrency test polls `pg_stat_activity` from a separate autocommit monitor connection, unlike the poll on the
+  locker connection in the Task 4 step: the locker's transaction snapshots `pg_stat_activity` once.
+- `.python-version` pins Python 3.12, and `tests/conftest.py` defaults the testcontainers socket override.
+- `amount numeric(18,2)` instead of `numeric(12,2)`, so the column cannot overflow (F4).
+- `VisitIn` rejects `completed`; a visit becomes completed only through the complete endpoint (F5).
+- A redelivery e2e test, `test_failed_delivery_is_redelivered`, pins `AckPolicy.NACK_ON_ERROR` (F1).
+- Seed visit `…06`, `in_progress`, for the README's Kafka outage demo (F3).
 
 ## Global Constraints
 
@@ -121,7 +140,7 @@ README.md
     - `make_visit` (function) → `async (status="in_progress", *, start=2026-11-11T08:00Z, end=2026-11-11T09:30Z,
       rate=Decimal("40.00"), description="Home care") -> UUID`. It inserts straight into `visits.visits`.
 
-- [ ] **Step 1: Write `pyproject.toml` and run `uv sync`**
+- [x] **Step 1: Write `pyproject.toml` and run `uv sync`**
   - Add the dependencies from Global Constraints.
   - pytest config: `asyncio_mode = "auto"`, `asyncio_default_fixture_loop_scope = "function"`,
     `addopts = "--import-mode=importlib"`, `testpaths = ["tests"]`.
@@ -139,19 +158,19 @@ modules = ["app.visits", "app.billing"]
 
   Expected: `uv.lock` is created and `.venv/` holds the packages.
 
-- [ ] **Step 2: Create the empty packages, `Settings`, and `create_pool`**
+- [x] **Step 2: Create the empty packages, `Settings`, and `create_pool`**
 
   Also add `get_pool(request: Request) -> asyncpg.Pool` in `app/shared/db.py`; it returns `request.app.state.pool`.
   `.gitignore` covers `.venv/`, `__pycache__/` and `.pytest_cache/`.
 
-- [ ] **Step 3: Write `tests/conftest.py`**
+- [x] **Step 3: Write `tests/conftest.py`**
   - **`postgres_dsn`:** start `PostgresContainer("postgres:16-alpine", driver=None)`, then run
     `asyncio.run(apply_migrations(dsn))`. `apply_migrations` takes the `*.sql` files of `db/visits/migrations`, then
     `db/billing/migrations`, each sorted by name. For each file it executes the text between `-- migrate:up` and `-- migrate:down`.
   - **`pool`:** `create_pool(postgres_dsn)`, then
     `TRUNCATE visits.visits, visits.outbox, billing.billing_records, billing.processed_events`, then yield, then close.
 
-- [ ] **Step 4: Write the failing schema tests in `tests/test_schema.py`**
+- [x] **Step 4: Write the failing schema tests in `tests/test_schema.py`**
 
 ```python
 T0 = datetime(2026, 11, 11, 8, tzinfo=UTC)
@@ -180,12 +199,12 @@ async def test_outbox_payload_roundtrips_as_dict(pool):
     assert await pool.fetchval("SELECT payload FROM visits.outbox") == {"rate": "40.00"}
 ```
 
-- [ ] **Step 5: Run the tests and confirm they fail**
+- [x] **Step 5: Run the tests and confirm they fail**
 
   Run: `uv run pytest tests/test_schema.py -v`
   Expected: errors with `relation "visits.visits" does not exist`, because there are no migrations yet.
 
-- [ ] **Step 6: Write the three migrations**
+- [x] **Step 6: Write the three migrations**
 
   Each file holds `-- migrate:up` with the DDL below and `-- migrate:down` with the matching `DROP`s.
 
@@ -233,12 +252,12 @@ CREATE TABLE billing.processed_events (
 );
 ```
 
-- [ ] **Step 7: Run the tests and the import contract**
+- [x] **Step 7: Run the tests and the import contract**
 
   Run: `uv run pytest tests/test_schema.py -v && uv run lint-imports`
   Expected: 4 passed, and `Contracts: 1 kept, 0 broken.`
 
-- [ ] **Step 8: Commit**
+- [x] **Step 8: Commit**
 
 ```bash
 git add pyproject.toml uv.lock .gitignore app db tests
@@ -270,7 +289,7 @@ git commit -m "Add project scaffold, schema migrations and test harness"
   - `TRANSITIONS: Final[Mapping[VisitStatus, frozenset[VisitStatus]]] = {VisitStatus.IN_PROGRESS: frozenset({VisitStatus.COMPLETED})}`
   - `def sources_for(target: VisitStatus) -> list[VisitStatus]` returns, sorted, the statuses that may move to `target`.
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 ```python
 # tests/test_events.py
@@ -298,19 +317,19 @@ def test_nothing_moves_back_to_scheduled():
     assert sources_for(VisitStatus.SCHEDULED) == []
 ```
 
-- [ ] **Step 2: Run the tests and confirm they fail**
+- [x] **Step 2: Run the tests and confirm they fail**
 
   Run: `uv run pytest tests/test_events.py tests/visits/test_status.py -v`
   Expected: FAIL with `ModuleNotFoundError: No module named 'app.contracts.events'`.
 
-- [ ] **Step 3: Implement `app/contracts/events.py` and `app/visits/status.py`**
+- [x] **Step 3: Implement `app/contracts/events.py` and `app/visits/status.py`**
 
-- [ ] **Step 4: Run the tests and confirm they pass**
+- [x] **Step 4: Run the tests and confirm they pass**
 
   Run: `uv run pytest tests/test_events.py tests/visits/test_status.py -v`
   Expected: 4 passed.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add app/contracts app/visits/status.py tests
@@ -365,7 +384,7 @@ git commit -m "Add VisitCompleted contract and visit transition table"
     and closes it. The app mounts the visits router and runs with `uvicorn --factory app.main:create_app`.
   - **Fixture `client`:** `httpx.AsyncClient(transport=httpx.ASGITransport(app=create_app(pool=pool)), base_url="http://test")`.
 
-- [ ] **Step 1: Write the failing tests in `tests/visits/test_complete.py`**
+- [x] **Step 1: Write the failing tests in `tests/visits/test_complete.py`**
 
 ```python
 async def test_complete_in_progress_visit(client, pool, make_visit):
@@ -420,19 +439,19 @@ async def test_create_visit_rejects_end_before_start(client):
     assert (await client.post("/api/visits", json=body)).status_code == 422
 ```
 
-- [ ] **Step 2: Run the tests and confirm they fail**
+- [x] **Step 2: Run the tests and confirm they fail**
 
   Run: `uv run pytest tests/visits/test_complete.py -v`
   Expected: FAIL with `ModuleNotFoundError: No module named 'app.main'`.
 
-- [ ] **Step 3: Implement `repository`, `outbox.insert_event`, `service`, `schemas`, `api` and `main` as specified above**
+- [x] **Step 3: Implement `repository`, `outbox.insert_event`, `service`, `schemas`, `api` and `main` as specified above**
 
-- [ ] **Step 4: Run the tests and confirm they pass**
+- [x] **Step 4: Run the tests and confirm they pass**
 
   Run: `uv run pytest tests/visits/test_complete.py -v && uv run lint-imports`
   Expected: 10 passed, and the contract is kept.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add app tests
@@ -449,7 +468,7 @@ git commit -m "Add complete-visit endpoint with transactional outbox"
 **Interfaces:**
 - Consumes: the fixtures `client`, `pool`, `make_visit` and `postgres_dsn`; the endpoint from Task 3.
 
-- [ ] **Step 1: Write the test**
+- [x] **Step 1: Write the test**
 
   The test holds the row lock itself. Both requests then queue on the same row, which makes the race deterministic.
 
@@ -474,19 +493,19 @@ async def test_two_concurrent_completes_emit_one_event(client, pool, make_visit,
     assert await pool.fetchval("SELECT count(*) FROM visits.outbox WHERE aggregate_id=$1", vid) == 1
 ```
 
-- [ ] **Step 2: Run the test and confirm it passes**
+- [x] **Step 2: Run the test and confirm it passes**
 
   Run: `uv run pytest tests/visits/test_concurrency.py -v`
   Expected: PASS.
 
-- [ ] **Step 3: Prove the test catches the race**
+- [x] **Step 3: Prove the test catches the race**
 
   Temporarily replace ` AND status = ANY($2::text[])` in `mark_completed` with ` AND $2::text[] IS NOT NULL` (deleting it outright leaves `$2` unbound, and asyncpg rejects the call client-side before any request waits on the lock).
   Run: `uv run pytest tests/visits/test_concurrency.py -v`
   Expected: FAIL with `[200, 200] != [200, 409]`.
   Restore the line, run the test again, and expect PASS.
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
 
 ```bash
 git add tests/visits/test_concurrency.py
@@ -524,7 +543,7 @@ git commit -m "Add concurrency test for two complete requests"
   - **Fixture `make_event`:** `(**overrides) -> VisitCompletedV1`. Its defaults are a fresh `event_id` and `visit_id`,
     start `2026-11-11T08:00Z`, end `2026-11-11T09:30Z`, and `rate=Decimal("40.00")`.
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 ```python
 # tests/billing/test_pricing.py
@@ -577,19 +596,19 @@ async def test_second_event_for_same_visit_is_skipped(pool, make_event):
     assert len(await records(pool, first.visit_id)) == 1
 ```
 
-- [ ] **Step 2: Run the tests and confirm they fail**
+- [x] **Step 2: Run the tests and confirm they fail**
 
   Run: `uv run pytest tests/billing -v`
   Expected: FAIL with `ModuleNotFoundError: No module named 'app.billing.pricing'`.
 
-- [ ] **Step 3: Implement `pricing`, `repository` and `handler` as specified above**
+- [x] **Step 3: Implement `pricing`, `repository` and `handler` as specified above**
 
-- [ ] **Step 4: Run the tests and confirm they pass**
+- [x] **Step 4: Run the tests and confirm they pass**
 
   Run: `uv run pytest tests/billing -v && uv run lint-imports`
   Expected: 9 passed, and the contract is kept.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add app/billing tests
@@ -629,7 +648,7 @@ git commit -m "Add billing pricing and idempotent VisitCompleted handler"
     `visit_id: UUID`. It returns a list of `{id, visit_id, amount, status, created_at}`, with `amount` serialized as a string.
   - **Fixture `kafka_bootstrap`** (session): `KafkaContainer("confluentinc/cp-kafka:7.6.0").get_bootstrap_server()`.
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 ```python
 # tests/billing/test_consumer.py
@@ -677,22 +696,22 @@ async def test_ensure_topic_is_idempotent(kafka_bootstrap):
     assert "visits.events" in topics
 ```
 
-- [ ] **Step 2: Run the tests and confirm they fail**
+- [x] **Step 2: Run the tests and confirm they fail**
 
   Run: `uv run pytest tests/billing/test_consumer.py tests/billing/test_api.py tests/test_kafka_topic.py -v`
   Expected: FAIL with `ModuleNotFoundError: No module named 'app.billing.consumer'`.
 
-- [ ] **Step 3: Implement the units specified above**
+- [x] **Step 3: Implement the units specified above**
 
   The units are `ensure_topic`, `process_visits_message`, `build_broker`, `create_app` and `billing.api`.
   Also mount the billing router in `app.main.create_app`.
 
-- [ ] **Step 4: Run the tests and confirm they pass**
+- [x] **Step 4: Run the tests and confirm they pass**
 
   Run: `uv run pytest -v && uv run lint-imports`
   Expected: all tests pass, and the contract is kept.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add app tests
@@ -740,7 +759,7 @@ git commit -m "Add Kafka billing consumer and billing-records endpoint"
     - `def main() -> None` builds `Settings()`, a pool and a `KafkaPublisher`, then calls `run_relay` until SIGINT or SIGTERM.
       It is the entry point for `python -m app.visits.relay`.
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 ```python
 class FakePublish:
@@ -796,19 +815,19 @@ async def test_kafka_publisher_raises_when_kafka_unreachable():
         await asyncio.wait_for(pub({}, uuid4(), {}), timeout=30)
 ```
 
-- [ ] **Step 2: Run the tests and confirm they fail**
+- [x] **Step 2: Run the tests and confirm they fail**
 
   Run: `uv run pytest tests/visits/test_relay.py -v`
   Expected: FAIL with `ModuleNotFoundError: No module named 'app.visits.relay'`.
 
-- [ ] **Step 3: Implement the `outbox` additions and `relay` as specified above**
+- [x] **Step 3: Implement the `outbox` additions and `relay` as specified above**
 
-- [ ] **Step 4: Run the tests and confirm they pass**
+- [x] **Step 4: Run the tests and confirm they pass**
 
   Run: `uv run pytest tests/visits/test_relay.py -v && uv run lint-imports`
   Expected: 5 passed, and the contract is kept.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add app/visits tests/visits/test_relay.py
@@ -830,7 +849,7 @@ git commit -m "Add outbox relay with retry and backoff"
   - `build_broker` and `ensure_topic` (Task 6);
   - `run_relay` and `KafkaPublisher` (Task 7).
 
-- [ ] **Step 1: Add the import-linter contract that keeps Kafka out of the API**
+- [x] **Step 1: Add the import-linter contract that keeps Kafka out of the API**
 
 ```toml
 [tool.importlinter]
@@ -847,7 +866,7 @@ forbidden_modules = ["faststream", "aiokafka"]
   Run: `uv run lint-imports`
   Expected: `Contracts: 2 kept, 0 broken.`
 
-- [ ] **Step 2: Write the failing end-to-end tests in `tests/test_e2e.py`**
+- [x] **Step 2: Write the failing end-to-end tests in `tests/test_e2e.py`**
 
   Each test uses its own consumer `group_id=f"billing-{uuid4()}"`, so offsets never leak between tests.
 
@@ -876,13 +895,13 @@ async def test_event_survives_kafka_outage(client, pool, make_visit, kafka_boots
     assert rec["amount"] == "60.00"
 ```
 
-- [ ] **Step 3: Run the tests**
+- [x] **Step 3: Run the tests**
 
   Run: `uv run pytest tests/test_e2e.py -v`
   Expected: PASS, because every unit already exists. To prove that phase 3 pins `earliest`, temporarily set
   `auto_offset_reset="latest"` in `build_broker` and expect phase 3 to time out (FAIL). Then restore it.
 
-- [ ] **Step 4: Write `Dockerfile`, `.dockerignore`, `db/seed.sql` and `docker-compose.yml`**
+- [x] **Step 4: Write `Dockerfile`, `.dockerignore`, `db/seed.sql` and `docker-compose.yml`**
   - **`Dockerfile`:**
     1. Start from `python:3.12-slim`.
     2. `COPY --from=ghcr.io/astral-sh/uv:0.9 /uv /bin/uv`.
@@ -927,7 +946,7 @@ KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
 KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
 ```
 
-- [ ] **Step 5: Check the whole system by hand**
+- [x] **Step 5: Check the whole system by hand**
 
 ```bash
 docker compose up -d --build
@@ -942,7 +961,7 @@ docker compose start kafka                                                      
 
   Expected: every comment above holds.
 
-- [ ] **Step 6: Run the full suite and commit**
+- [x] **Step 6: Run the full suite and commit**
 
   Run: `uv run pytest -v && uv run lint-imports`
   Expected: all tests pass, and `Contracts: 2 kept, 0 broken.`
@@ -959,7 +978,7 @@ git commit -m "Add Docker Compose runtime and end-to-end tests"
 **Files:**
 - Create: `README.md`
 
-- [ ] **Step 1: Write `README.md`** with these sections, keeping the text short and linking the architecture doc
+- [x] **Step 1: Write `README.md`** with these sections, keeping the text short and linking the architecture doc
   instead of repeating it:
   1. **What it is.** One paragraph and a link to `docs/design/2026-11-11-architecture.md`.
   2. **Run it.** `docker compose up -d --build` and the curl session from Task 8, Step 5.
@@ -982,12 +1001,12 @@ git commit -m "Add Docker Compose runtime and end-to-end tests"
      - ordering when several relays run (one relay keeps per-visit order);
      - the reversal flow.
 
-- [ ] **Step 2: Check every command in the README against the running stack**
+- [x] **Step 2: Check every command in the README against the running stack**
 
   Run each command from sections 2–3 by hand.
   Expected: the output matches the README.
 
-- [ ] **Step 3: Commit**
+- [x] **Step 3: Commit**
 
 ```bash
 git add README.md
