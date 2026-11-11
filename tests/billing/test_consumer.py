@@ -49,6 +49,7 @@ async def test_unknown_event_type_is_skipped(pool, make_event):
     "body",
     [
         b"not json",
+        b"[" * 100_000,
         {"visit_id": "x"},
         {
             "event_id": "6f1c1c0e-5c58-4b8e-9d57-0d5f5a3c1a11",
@@ -62,6 +63,11 @@ async def test_unknown_event_type_is_skipped(pool, make_event):
 )
 async def test_malformed_message_is_skipped(pool, body):
     await publish(pool, body, HEADERS)  # must not raise: TestKafkaBroker re-raises handler errors
+    assert await count(pool) == 0
+
+
+async def test_non_json_body_with_json_content_type_is_skipped(pool):
+    await publish(pool, b"not json", HEADERS | {"content-type": "application/json"})
     assert await count(pool) == 0
 
 
@@ -81,9 +87,3 @@ async def test_infrastructure_error_propagates(postgres_dsn, make_event):
     with pytest.raises(asyncpg.InterfaceError):
         await process_visits_message(closed, raw, HEADERS)
 
-
-async def test_deeply_nested_json_is_skipped(pool):
-    # Called directly: TestKafkaBroker's own call recorder json-decodes the body and would
-    # hit the RecursionError itself, before our handler runs.
-    assert await process_visits_message(pool, b"[" * 100_000, HEADERS) is False
-    assert await count(pool) == 0

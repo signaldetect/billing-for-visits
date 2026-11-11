@@ -11,6 +11,12 @@ from app.shared.kafka import ensure_topic
 from app.shared.settings import Settings
 
 
+async def _raw_body(msg: KafkaMessage) -> bytes:
+    # Pass the body through: FastStream would otherwise JSON-decode it before the handler,
+    # and a decode error there would nack and redeliver the message forever.
+    return msg.body
+
+
 def build_broker(
     bootstrap_servers: str, get_pool: Callable[[], asyncpg.Pool], *, group_id: str = "billing"
 ) -> KafkaBroker:
@@ -21,6 +27,7 @@ def build_broker(
         group_id=group_id,
         ack_policy=AckPolicy.NACK_ON_ERROR,
         auto_offset_reset="earliest",
+        decoder=_raw_body,
     )
     async def on_visits_event(msg: KafkaMessage) -> None:
         await process_visits_message(get_pool(), msg.body, msg.headers)
