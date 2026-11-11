@@ -5,7 +5,8 @@ from uuid import uuid4
 import pytest
 import pytest_asyncio
 from aiokafka import AIOKafkaConsumer
-from aiokafka.errors import KafkaConnectionError
+from aiokafka.errors import KafkaConnectionError, KafkaError
+from testcontainers.community.kafka import KafkaContainer
 
 from app.contracts.events import VISIT_COMPLETED_V1
 from app.visits import outbox, relay
@@ -115,3 +116,16 @@ async def test_kafka_publisher_raises_when_kafka_unreachable():
     pub = KafkaPublisher("127.0.0.1:1")
     with pytest.raises(KafkaConnectionError):
         await asyncio.wait_for(pub({}, uuid4(), {}), timeout=30)
+
+
+async def test_kafka_publisher_fails_fast_when_kafka_dies_mid_connection():
+    # Dedicated container: the session-wide kafka_bootstrap is needed by other tests.
+    with KafkaContainer("confluentinc/cp-kafka:7.6.0") as kafka:
+        pub = KafkaPublisher(kafka.get_bootstrap_server(), topic="relay-outage", request_timeout_ms=3000)
+        try:
+            await asyncio.wait_for(pub({"n": 1}, uuid4(), {}), timeout=60)
+            kafka.get_wrapped_container().stop()
+            with pytest.raises(KafkaError):
+                await asyncio.wait_for(pub({"n": 2}, uuid4(), {}), timeout=30)
+        finally:
+            await asyncio.wait_for(pub.close(), timeout=10)

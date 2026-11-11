@@ -79,23 +79,26 @@ async def run_relay(
 
 
 class KafkaPublisher:
-    def __init__(self, bootstrap_servers: str, topic: str = VISITS_TOPIC) -> None:
+    def __init__(
+        self, bootstrap_servers: str, topic: str = VISITS_TOPIC, *, request_timeout_ms: int = 10_000
+    ) -> None:
         self._bootstrap_servers = bootstrap_servers
         self._topic = topic
+        self._request_timeout_ms = request_timeout_ms
         self._broker: KafkaBroker | None = None
 
     async def __call__(self, payload: dict[str, Any], key: UUID, headers: dict[str, str]) -> None:
         try:
             if self._broker is None:
                 await ensure_topic(self._bootstrap_servers, self._topic)
-                broker = KafkaBroker(
+                # No idempotence: with it aiokafka retries a batch forever, so a publish never fails
+                # during an outage; billing dedups by event_id anyway.
+                self._broker = KafkaBroker(
                     self._bootstrap_servers,
                     acks="all",
-                    enable_idempotence=True,
-                    request_timeout_ms=10_000,
+                    request_timeout_ms=self._request_timeout_ms,
                 )
-                await broker.start()
-                self._broker = broker
+                await self._broker.start()
             await self._broker.publish(
                 payload, self._topic, key=str(key).encode(), headers=headers
             )

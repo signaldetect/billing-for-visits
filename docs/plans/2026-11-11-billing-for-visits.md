@@ -42,7 +42,7 @@ PostgreSQL 16, Kafka 3.9 (KRaft), dbmate, docker-compose, pytest with pytest-asy
     - key = the visit id's string form as UTF-8 bytes;
     - headers `event_id` and `event_type`;
     - event type `visits.visit_completed.v1`.
-  - Producer: `acks="all"`, `enable_idempotence=True`.
+  - Producer: `acks="all"`, no idempotence (aiokafka retries idempotent batches forever, so a publish would hang during an outage; the consumer dedups by `event_id`).
   - Consumer: `group_id="billing"`, `ack_policy=AckPolicy.NACK_ON_ERROR`, `auto_offset_reset="earliest"`.
 - **Kafka stays out of the `api` process.** It never connects to Kafka; nothing it imports touches `faststream` or `aiokafka`.
 - **Tests:** `uv run pytest` needs only Docker.
@@ -731,9 +731,9 @@ git commit -m "Add Kafka billing consumer and billing-records endpoint"
       - After a full batch it loops at once.
       - Every wait is `asyncio.wait_for(stop.wait(), t)`, so setting `stop` ends the loop promptly.
     - `class KafkaPublisher`:
-      - `__init__(self, bootstrap_servers: str, topic: str = VISITS_TOPIC)`.
+      - `__init__(self, bootstrap_servers: str, topic: str = VISITS_TOPIC, *, request_timeout_ms: int = 10_000)`.
       - `async __call__(payload, key, headers)` connects lazily: `ensure_topic`, then
-        `KafkaBroker(bootstrap_servers, acks="all", enable_idempotence=True, request_timeout_ms=10_000)` and `await broker.start()`.
+        `KafkaBroker(bootstrap_servers, acks="all", request_timeout_ms=10_000)` and `await broker.start()`.
         It publishes with `key=str(key).encode()` and the headers. On any error it stops and drops the broker, so the
         next call reconnects from scratch, and then it re-raises.
       - `async close()`.
