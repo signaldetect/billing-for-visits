@@ -57,7 +57,8 @@ docker compose stop kafka
 curl -s -XPOST localhost:8000/api/visits/$V/complete   # 200 while Kafka is down
 docker compose exec postgres psql -U app -c "SELECT attempts, published_at FROM visits.outbox ORDER BY seq"
 docker compose start kafka       # within about a minute the billing record appears
-curl -s "localhost:8000/api/billing-records?visit_id=$V"
+until curl -s "localhost:8000/api/billing-records?visit_id=$V" | grep -q amount; do sleep 2; done
+curl -s "localhost:8000/api/billing-records?visit_id=$V"   # one record, amount "60.00"
 ```
 
 The `psql` query shows the new event still unpublished (`published_at` empty). `attempts` rises once a publish attempt fails.
