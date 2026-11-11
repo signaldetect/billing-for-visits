@@ -21,8 +21,9 @@ async def wait_for_lock_waiters(conn, n, timeout=5.0):
 async def test_two_concurrent_completes_emit_one_event(client, pool, make_visit, postgres_dsn):
     vid = await make_visit("in_progress")
     locker = await asyncpg.connect(postgres_dsn)
-    # A separate connection does the polling: polling through the connection that
-    # holds the row lock starves the pool's second connection from opening.
+    # Poll from a separate autocommit connection: pg_stat_activity is snapshotted once
+    # per transaction, so polls inside the locker's transaction never see the pool's
+    # second backend, which connects after the first poll.
     monitor = await asyncpg.connect(postgres_dsn)
     tx = locker.transaction()
     await tx.start()
