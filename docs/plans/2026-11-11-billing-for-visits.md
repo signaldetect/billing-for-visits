@@ -481,7 +481,7 @@ async def test_two_concurrent_completes_emit_one_event(client, pool, make_visit,
 
 - [ ] **Step 3: Prove the test catches the race**
 
-  Temporarily delete ` AND status = ANY($2::text[])` from `mark_completed`.
+  Temporarily replace ` AND status = ANY($2::text[])` in `mark_completed` with ` AND $2::text[] IS NOT NULL` (deleting it outright leaves `$2` unbound, and asyncpg rejects the call client-side before any request waits on the lock).
   Run: `uv run pytest tests/visits/test_concurrency.py -v`
   Expected: FAIL with `[200, 200] != [200, 409]`.
   Restore the line, run the test again, and expect PASS.
