@@ -36,3 +36,10 @@ def test_visit_completed_rejects_negative_rate():
     with pytest.raises(ValidationError):
         VisitCompletedV1(event_id=uuid4(), occurred_at=END, visit_id=uuid4(),
                          start_date_time=START, end_date_time=END, rate=Decimal("-1"))
+
+
+@pytest.mark.parametrize("rate", ["1e30", "0.001", "100000000.00"])
+def test_visit_completed_rejects_rate_outside_column_bounds(rate):
+    with pytest.raises(ValidationError):
+        VisitCompletedV1(event_id=uuid4(), occurred_at=END, visit_id=uuid4(),
+                         start_date_time=START, end_date_time=END, rate=Decimal(rate))

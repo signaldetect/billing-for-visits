@@ -1,10 +1,14 @@
+from datetime import timedelta
 from decimal import Decimal
 
+import asyncpg
 import pytest
 from faststream.kafka import TestKafkaBroker
 
 from app.billing.consumer import build_broker
+from app.billing.handler import process_visits_message
 from app.contracts.events import VISITS_TOPIC
+from app.shared.db import create_pool
 
 HEADERS = {"event_type": "visits.visit_completed.v1"}
 
@@ -58,4 +62,28 @@ async def test_unknown_event_type_is_skipped(pool, make_event):
 )
 async def test_malformed_message_is_skipped(pool, body):
     await publish(pool, body, HEADERS)  # must not raise: TestKafkaBroker re-raises handler errors
+    assert await count(pool) == 0
+
+
+async def test_amount_overflowing_column_is_skipped(pool, make_event):
+    e = make_event(
+        rate=Decimal("99999999.99"),
+        end_date_time=make_event().start_date_time + timedelta(hours=101),
+    )
+    await publish(pool, e.model_dump(mode="json"), HEADERS)
+    assert await count(pool) == 0
+
+
+async def test_infrastructure_error_propagates(postgres_dsn, make_event):
+    closed = await create_pool(postgres_dsn)
+    await closed.close()
+    raw = make_event().model_dump_json().encode()
+    with pytest.raises(asyncpg.InterfaceError):
+        await process_visits_message(closed, raw, HEADERS)
+
+
+async def test_deeply_nested_json_is_skipped(pool):
+    # Called directly: TestKafkaBroker's own call recorder json-decodes the body and would
+    # hit the RecursionError itself, before our handler runs.
+    assert await process_visits_message(pool, b"[" * 100_000, HEADERS) is False
     assert await count(pool) == 0

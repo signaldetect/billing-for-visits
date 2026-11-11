@@ -35,7 +35,16 @@ async def process_visits_message(pool: asyncpg.Pool, raw: bytes, headers: Mappin
         return False
     try:
         event = VisitCompletedV1.model_validate(json.loads(raw))
-    except ValueError:  # JSONDecodeError and pydantic ValidationError both subclass it
+    except Exception:  # json.loads can raise ValueError or RecursionError; no I/O in this try
         logger.error("Skipping invalid message, event_id=%s", headers.get("event_id"), exc_info=True)
         return False
-    return await handle_visit_completed(pool, event)
+    try:
+        return await handle_visit_completed(pool, event)
+    except asyncpg.DataError:
+        # Deterministic data error (SQLSTATE class 22, e.g. amount out of range): redelivery
+        # would fail forever, so skip. Other errors (connection etc.) propagate for redelivery.
+        logger.error(
+            "Skipping event %s for visit %s: data error", event.event_id, event.visit_id,
+            exc_info=True,
+        )
+        return False

@@ -17,7 +17,7 @@ class VisitCompletedV1(BaseModel):
     visit_id: UUID
     start_date_time: AwareDatetime
     end_date_time: AwareDatetime
-    rate: Decimal = Field(ge=0)
+    rate: Decimal = Field(ge=0, max_digits=10, decimal_places=2)
 
     @model_validator(mode="after")
     def _end_after_start(self) -> Self:
