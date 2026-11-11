@@ -1,10 +1,12 @@
+import json
 import logging
+from collections.abc import Mapping
 
 import asyncpg
 
 from app.billing import repository
 from app.billing.pricing import calculate_amount
-from app.contracts.events import VisitCompletedV1
+from app.contracts.events import VISIT_COMPLETED_V1, VisitCompletedV1
 
 logger = logging.getLogger(__name__)
 
@@ -23,3 +25,17 @@ async def handle_visit_completed(pool: asyncpg.Pool, event: VisitCompletedV1) ->
             "Visit already billed, skipping event %s for visit %s", event.event_id, event.visit_id
         )
         return False
+
+
+async def process_visits_message(pool: asyncpg.Pool, raw: bytes, headers: Mapping[str, str]) -> bool:
+    """Handle one raw `visits.events` message. Bad messages are logged and skipped (False);
+    only infrastructure errors propagate, so the broker redelivers those."""
+    if headers.get("event_type") != VISIT_COMPLETED_V1:
+        logger.info("Skipping message of event type %r", headers.get("event_type"))
+        return False
+    try:
+        event = VisitCompletedV1.model_validate(json.loads(raw))
+    except ValueError:  # JSONDecodeError and pydantic ValidationError both subclass it
+        logger.error("Skipping invalid message, event_id=%s", headers.get("event_id"), exc_info=True)
+        return False
+    return await handle_visit_completed(pool, event)

@@ -24,3 +24,15 @@ def test_visit_completed_rejects_naive_datetime():
     with pytest.raises(ValidationError):
         VisitCompletedV1(event_id=uuid4(), occurred_at=END, visit_id=uuid4(),
                          start_date_time=START.replace(tzinfo=None), end_date_time=END, rate=Decimal("1"))
+
+
+def test_visit_completed_rejects_end_not_after_start():
+    with pytest.raises(ValidationError):
+        VisitCompletedV1(event_id=uuid4(), occurred_at=END, visit_id=uuid4(),
+                         start_date_time=START, end_date_time=START, rate=Decimal("1"))
+
+
+def test_visit_completed_rejects_negative_rate():
+    with pytest.raises(ValidationError):
+        VisitCompletedV1(event_id=uuid4(), occurred_at=END, visit_id=uuid4(),
+                         start_date_time=START, end_date_time=END, rate=Decimal("-1"))

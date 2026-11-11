@@ -9,6 +9,7 @@ import asyncpg
 import httpx
 import pytest
 import pytest_asyncio
+from testcontainers.community.kafka import KafkaContainer
 from testcontainers.community.postgres import PostgresContainer
 
 from app.contracts.events import VisitCompletedV1
@@ -43,6 +44,12 @@ def postgres_dsn() -> str:
         dsn = pg.get_connection_url()
         asyncio.run(apply_migrations(dsn))
         yield dsn
+
+
+@pytest.fixture(scope="session")
+def kafka_bootstrap() -> str:
+    with KafkaContainer("confluentinc/cp-kafka:7.6.0") as kafka:
+        yield kafka.get_bootstrap_server()
 
 
 @pytest_asyncio.fixture
