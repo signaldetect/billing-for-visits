@@ -8,7 +8,7 @@ dependencies = [
     "asyncpg>=0.32",
     "pydantic>=2.14",
     "pydantic-settings>=2.16",
-    "faststream[kafka]>=0.7.8",
+    "faststream[kafka,cli]>=0.7.8",
 ]
 
 [dependency-groups]
