@@ -2,6 +2,5 @@
 __pycache__/
 .pytest_cache/
 .git/
-.superpowers/
 tests/
 docs/

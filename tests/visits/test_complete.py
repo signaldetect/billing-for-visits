@@ -60,3 +60,9 @@ async def test_create_and_get_visit(client):
 async def test_create_visit_rejects_end_before_start(client):
     body = {"start_date_time": "2026-11-11T09:30:00Z", "end_date_time": "2026-11-11T08:00:00Z", "rate": "40.00"}
     assert (await client.post("/api/visits", json=body)).status_code == 422
+
+
+async def test_create_visit_rejects_completed_status(client):
+    body = {"start_date_time": "2026-11-11T08:00:00Z", "end_date_time": "2026-11-11T09:30:00Z",
+            "rate": "40.00", "status": "completed"}
+    assert (await client.post("/api/visits", json=body)).status_code == 422

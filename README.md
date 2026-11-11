@@ -19,7 +19,7 @@ docker compose up -d --build
 |---|---|
 | `postgres`, `kafka` | Infrastructure |
 | `migrate-visits`, `migrate-billing` | Apply each module's migrations, then exit |
-| `seed` | Inserts five visits, then exits |
+| `seed` | Inserts six visits, then exits |
 | `api` | FastAPI on port 8000 |
 | `outbox-relay` | Publishes outbox rows to Kafka |
 | `billing-consumer` | Reads `visits.events`, writes billing records |
@@ -34,6 +34,10 @@ Seed visits `00000000-0000-0000-0000-00000000000N`, all on 2026-11-11, 08:00 to 
 | 3 | `completed` |
 | 4 | `canceled` |
 | 5 | `missed` |
+| 6 | `in_progress` (kept for the Kafka outage demo) |
+
+Seed visit 3 starts as `completed` to demonstrate the 409, so it has no billing record: it never went through
+the complete endpoint. `POST /api/visits` rejects `"status": "completed"` with 422 for the same reason.
 
 Try it:
 
@@ -45,16 +49,15 @@ sleep 3                                                  # billing is asynchrono
 curl -s "localhost:8000/api/billing-records?visit_id=$V"  # one record, amount "60.00"
 ```
 
-Now stop Kafka and complete another visit. Create one first (dev endpoint):
+Now stop Kafka and complete seed visit 6, which is reserved for this demo:
 
 ```bash
+V=00000000-0000-0000-0000-000000000006
 docker compose stop kafka
-curl -s -XPOST localhost:8000/api/visits -H 'content-type: application/json' \
-  -d '{"start_date_time":"2026-11-11T08:00:00Z","end_date_time":"2026-11-11T09:30:00Z","rate":"40.00","status":"in_progress"}'
-curl -s -XPOST localhost:8000/api/visits/<id from the response>/complete   # 200 while Kafka is down
+curl -s -XPOST localhost:8000/api/visits/$V/complete   # 200 while Kafka is down
 docker compose exec postgres psql -U app -c "SELECT attempts, published_at FROM visits.outbox ORDER BY seq"
 docker compose start kafka       # within about a minute the billing record appears
-curl -s "localhost:8000/api/billing-records?visit_id=<id>"
+curl -s "localhost:8000/api/billing-records?visit_id=$V"
 ```
 
 The `psql` query shows the new event still unpublished (`published_at` empty). `attempts` rises once a publish attempt fails.
@@ -91,7 +94,7 @@ Notes:
 - Only `in_progress` can be completed. Any other status gives `409`, an unknown id gives `404`.
 - Amount = rate x scheduled hours, rounded half-up to cents, in one currency.
 - The status changes in the request transaction. Billing follows later, asynchronously.
-- Visits come from the seed and the dev endpoints.
+- Visits come from the seed and the dev endpoints. `completed` is reachable only through the complete endpoint.
 - No time-based checks (a visit is not compared with the current time).
 - Status values are snake_case.
 - The producer uses `acks="all"` without `enable_idempotence`. aiokafka never expires idempotent batches,
@@ -117,6 +120,8 @@ Notes:
 - Per-module database roles.
 - Metrics and tracing.
 - An `Idempotency-Key` header.
+- Head-of-line blocking: the relay publishes in `seq` order, so an event that could never be published would hold back
+  the ones behind it. No such per-event failure is reachable today; every failure so far is Kafka being unavailable.
 - Ordering when several relays run (one relay keeps per-visit order).
 - The reversal flow. It must keep a redelivered `VisitCompleted` from billing the visit a second time;
   today the partial unique index blocks that.
