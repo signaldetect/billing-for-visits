@@ -32,8 +32,15 @@ pythonpath = ["."]
 
 [tool.importlinter]
 root_package = "app"
+include_external_packages = true
 
 [[tool.importlinter.contracts]]
 name = "Visits and Billing are independent"
 type = "independence"
 modules = ["app.visits", "app.billing"]
+
+[[tool.importlinter.contracts]]
+name = "The API never touches Kafka"
+type = "forbidden"
+source_modules = ["app.main", "app.visits.api", "app.visits.service", "app.billing.api"]
+forbidden_modules = ["faststream", "aiokafka"]
